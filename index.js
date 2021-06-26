@@ -21,7 +21,6 @@ let Application = PIXI.Application,
   });
 
   document.body.appendChild(app.view);
-  // Cente view
   app.renderer.backgroundColor = 0x061639;
 
   const shapes = [
@@ -226,9 +225,17 @@ let Application = PIXI.Application,
       numberOfPieces,
       numberOfLines,
       instructionText,
-      keysDown
-
-  // TODO: Add timer!  Count pieces ! When Game Over - render splash screen with GAME OVER text and details
+      keysDown,
+      startTime,
+      interval,
+      level,
+      levelUpStartTime,
+      levelText,
+      levelUpTextPosition,
+      fadeOpacity,
+      rowsUntillBrake,
+      rowsToRest,
+      breaking
 
   function init() {
     gameOver = false;
@@ -238,88 +245,237 @@ let Application = PIXI.Application,
     numberOfLines = 0;
     numberOfPieces = 0;
     keysDown = {};
+    level = 1;
+    rowsUntillBrake = undefined;
+    rowsToRest = undefined;
+    breaking = false;
 
+    interval = {
+      1: 800,
+      2: 600,
+      3: 400,
+      4: 350,
+      5: 250,
+    }
+
+    piece = newPiece();
+    newGrid();
+    startTime = Date.now();
+
+    addEventListeners();
+
+    app.ticker.add(gameLoop);
+    app.ticker.add(isGameOver);
+    app.ticker.start();
+  }
+
+  function addEventListeners() {
+    document.addEventListener('keydown', handleKeyDown);
+    document.addEventListener('keyup', handleKeyUp);
+  }
+
+  function removeEventListeners() {
+    keysDown = {};
+    document.removeEventListener('keydown', handleKeyDown);
+    document.removeEventListener('keyup', handleKeyUp);
+  }
+
+  function newPiece() {
+    rotation = 0;
     currentShape = shapes[randomInt(0, shapes.length)];
 
-    piece = {
+    let emptyRows = 0
+    for (let i = currentShape[rotation].length - 1; i >= 0; i--) {
+      let isEmpty = true
+      currentShape[rotation][i].forEach((col) => {
+        if (col) isEmpty = false;
+      });
+      if (isEmpty) emptyRows++
+    }
+
+    return {
       shape: currentShape[rotation],
       position: {
         x: app.view.width / 2 - currentShape.length * SQUARE_SIZE / 2,
-        y: currentShape[rotation].length * SQUARE_SIZE * -1
+        y: (currentShape[rotation].length - emptyRows) * SQUARE_SIZE * -1
       },
     }
+  }
 
-    // Draw Grid Background
+  function newGrid() {
     for (var row = 0; row < ROWS; row++) {
       grid.push(new Array(COLUMNS).fill(0));
     }
-
-    document.addEventListener('keydown', handleKeyDown);
-    document.addEventListener('keyup', handleKeyUp);
-
-    play();
   }
 
   let fallCounter = 0;
-  let interval = 1000;
-  let lastTime = 0;
+  let lastTime = Date.now();
+  function gameLoop() {
+    let now = Date.now();
+    playTime = now - startTime;
 
-  function play(time = 0) {
-    // Fall each second
-    const deltaTime = time - lastTime;
-    lastTime = time;
-
+    const deltaTime = now - lastTime;
+    lastTime = now;
     fallCounter += deltaTime;
-    playTime += deltaTime;
 
-    if (gameOver) {
-      handleGameOver();
-    } else {
-      if (fallCounter > interval) {
-        moveDown();
-        fallCounter = 0;
-      }
+    if (fallCounter > interval[level]) {
+      moveDown();
+      fallCounter = 0;
+      if (bottomCollision()) {
 
-      if (bottomCollision() &&
-          !gameOver &&
-          !keysDown[37] &&
-          !keysDown[39]
-        ) {
+        if (keysDown[37]) {
+          moveLeft();
+          removeEventListeners();
+          keysDown = {};
+        }
+        if (keysDown[39]) {
+          moveRight();
+          removeEventListeners();
+          keysDown = {};
+        }
 
         copyOnGrid();
-
-        // Check if top is reached
-        grid[0].forEach((col, colIndex) => {
-          if (grid[0][colIndex]) {
-            gameOver = true;
-          }
-        })
-
-        // Check for lines
-        grid.forEach((row, rowIndex) => {
-          let line = true;
-          row.forEach((col, colIndex) => {
-            if (!col) {
-              line = false;
-            }
-          });
-          if (line) {
-            removeLine(rowIndex);
-            numberOfLines++;
-          }
-        })
+        checkLines();
 
         numberOfPieces++;
-        currentShape = shapes[randomInt(0, shapes.length)];
-        rotation = 0;
-        piece.shape = currentShape[rotation];
-        piece.position.x = app.view.width / 2 - currentShape.length * SQUARE_SIZE / 2;
-        piece.position.y = currentShape[rotation].length * SQUARE_SIZE * -1;
+        piece = newPiece();
+        moveDown();
+        addEventListeners();
       }
-
-      draw();
-      requestAnimationFrame(play);
     }
+    draw();
+  }
+
+  function isGameOver() {
+    grid[0].forEach((col, colIndex) => {
+      if (grid[0][colIndex]) {
+        gameOver = true;
+        app.ticker.remove(gameLoop);
+      }
+    })
+    if (gameOver) {
+      playTime = app.ticker.lastTime;
+      draw();
+      handleGameOver();
+      app.ticker.remove(isGameOver);
+    }
+  }
+
+  function checkLines() {
+    const linesToRemove = [];
+
+    grid.forEach((row, rowIndex) => {
+      let line = true;
+      row.forEach((col, colIndex) => {
+        if (!col) {
+          line = false;
+        }
+      });
+      if (line) {
+        linesToRemove.push(rowIndex)
+        numberOfLines++;
+      }
+    })
+
+    removeLine(linesToRemove);
+
+    // TODO: Defene lines per level
+    switch (true) {
+      case numberOfLines >= 20 && numberOfLines < 40 && level != 2:
+        level = 2;
+        levelText = 'Level 2';
+        displaySplah();
+        break;
+      case numberOfLines >= 40 && numberOfLines < 60 && level != 3:
+        level = 3;
+        levelText = 'Level 3';
+        displaySplah();
+        break;
+      case numberOfLines >= 60 && numberOfLines < 80 && level != 4:
+        level = 4;
+        levelText = 'Level 4';
+        displaySplah();
+        break;
+      case numberOfLines >= 80 && level != 5:
+        rowsUntillBrake = 5;
+        level = 5;
+        levelText = 'Wow! Level 5';
+        displaySplah();
+        break
+      case level === 5:
+        if (rowsUntillBrake <= 0 && !breaking) {
+          breaking = true;
+          rowsToRest = 0
+          interval[5] = 500;
+          levelText = 'have a break, pro!';
+          displaySplah();
+        } else if (rowsToRest >= 5 && breaking) {
+          breaking = false;
+          rowsUntillBrake = 5;
+          interval[5] = 150;
+          levelText = 'back to business';
+          displaySplah();
+        }
+        break;
+    }
+  }
+
+  function displaySplah() {
+    removeEventListeners();
+    app.ticker.stop();
+    app.ticker.remove(gameLoop);
+    app.ticker.add(levelUp);
+    app.ticker.start();
+    levelUpStartTime = Date.now()
+    levelUpTextPosition = app.view.height / 2;
+    fadeOpacity = 0;
+  }
+
+  function levelUp() {
+    let now = Date.now();
+
+    if(now - levelUpStartTime > 1800) {
+      app.ticker.stop();
+      app.ticker.remove(levelUp);
+      app.ticker.add(gameLoop);
+      app.ticker.start();
+      addEventListeners();
+    }
+
+    levelUpTextPosition -= 0.3;
+    fadeOpacity += 0.010
+    levelUpSplash(levelUpTextPosition, fadeOpacity);
+  }
+
+  function levelUpSplash(textPosition, fadeOpacity) {
+    draw();
+    // refactor - move elements as constants on top!
+    // let rectangle = new Graphics();
+    // rectangle.beginFill(0x061639, 0.6 - fadeOpacity);
+    // rectangle.drawRect(0, 0, app.view.width, app.view.height);
+    // rectangle.endFill();
+    // // app.stage.addChild(rectangle);
+
+    const mainTextOptions = {
+        font: 'Roboto',
+        fontSize: 32,
+        fontWeight: 'bolder',
+        fill: '#ffb84d',
+        dropShadow: true,
+        dropShadowAlpha: 0.5,
+        dropShadowAngle: Math.PI/2,
+    }
+    const levelUpText = new Text(`${levelText}`, mainTextOptions);
+    levelUpText.anchor.set(0.5, 0.5);
+    levelUpText.x = app.view.width / 2;
+    levelUpText.y = textPosition;
+    app.stage.addChild(levelUpText);
+
+    let fadeText = new Graphics();
+    fadeText.beginFill(0x061639, fadeOpacity);
+    fadeText.drawRect(0, 0, app.view.width, app.view.height);
+    fadeText.endFill();
+    app.stage.addChild(fadeText);
   }
 
   // Create Shapes
@@ -342,27 +498,42 @@ let Application = PIXI.Application,
   }
 
   function draw() {
-    // Clear previoustly drawn piece
     for (let i = app.stage.children.length - 1; i >= 0; i--) {
-      app.stage.removeChild(app.stage.children[i])
+      app.stage.removeChildAt(i);
     };
 
     createShapes(grid, { x: 0, y: 0 });
     createShapes(piece.shape, piece.position);
   }
 
-  function removeLine(rowIndex) {
-    for (var row = rowIndex; row > 0; row--) {
-      let upperRow = grid[row - 1];
-      grid[row] = upperRow;
-      if (!gameOver && row === 1) {
-        grid[row - 1].fill(0)
-      }
+  function removeLine(indices) {
+    indices.forEach((index) => {
+      grid.splice(index, 1);
+      grid.unshift(new Array(COLUMNS).fill(0));
+    });
+
+    if (rowsUntillBrake) {
+      rowsUntillBrake -= indices.length;
+    }
+
+    if (rowsToRest !== undefined) {
+      rowsToRest += indices.length
     }
   }
 
   function handleKeyDown(event) {
     keysDown[event.keyCode] = true;
+
+    // TODO: add pause splash. Stop / star current listener, reuse animation text
+    // Not pausing on level up splash
+    if (event.keyCode === 13) {
+      console.log(app.ticker);
+      if (app.ticker.started) {
+        app.ticker.stop();
+      } else {
+        app.ticker.start();
+      }
+    }
 
     if (keysDown[37]) {
       moveLeft();
@@ -560,8 +731,10 @@ let Application = PIXI.Application,
   }
 
   function handleGameOver() {
-    document.removeEventListener('keydown', handleKeyDown);
-    document.removeEventListener('keyup', handleKeyUp);
+    app.ticker.add(animateText);
+
+    removeEventListeners();
+
     let rectangle = new Graphics();
     rectangle.beginFill(0x061639, 0.8);
     rectangle.drawRect(0, 0, app.view.width, app.view.height);
@@ -575,9 +748,6 @@ let Application = PIXI.Application,
         dropShadow: true,
         dropShadowAlpha: 0.5,
         dropShadowAngle: Math.PI/2,
-        // stroke: '#FFF',
-        // strokeThickness: 1,
-        // lineJoin: 'round'
     }
     const textOptions = {
         font: 'Roboto',
@@ -620,15 +790,12 @@ let Application = PIXI.Application,
     app.stage.addChild(numberOfPiecesText);
     app.stage.addChild(numberOfLinesText);
     app.stage.addChild(instructionText);
-    animateText();
 
     document.addEventListener('keydown', restartGame);
-    // finish ...
   }
 
   let scale = 1;
   let increase = true;
-
   function animateText(time) {
     if (increase) {
       scale += 0.002
@@ -645,14 +812,15 @@ let Application = PIXI.Application,
         increase = true;
       }
     }
-    if (gameOver) {
-      requestAnimationFrame(animateText);
-    }
+    // if (gameOver) {
+    //   requestAnimationFrame(animateText);
+    // }
   }
 
   function restartGame(event) {
     if (event.keyCode === 32) {
       document.removeEventListener('keydown', restartGame);
+      app.ticker.remove(animateText);
       init();
     }
   }
