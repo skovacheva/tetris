@@ -235,7 +235,8 @@ let Application = PIXI.Application,
       fadeOpacity,
       rowsUntillBrake,
       rowsToRest,
-      breaking
+      breaking,
+      gamePaused
 
   function init() {
     gameOver = false;
@@ -249,6 +250,7 @@ let Application = PIXI.Application,
     rowsUntillBrake = undefined;
     rowsToRest = undefined;
     breaking = false;
+    gamePaused = false;
 
     interval = {
       1: 800,
@@ -449,12 +451,6 @@ let Application = PIXI.Application,
 
   function levelUpSplash(textPosition, fadeOpacity) {
     draw();
-    // refactor - move elements as constants on top!
-    // let rectangle = new Graphics();
-    // rectangle.beginFill(0x061639, 0.6 - fadeOpacity);
-    // rectangle.drawRect(0, 0, app.view.width, app.view.height);
-    // rectangle.endFill();
-    // // app.stage.addChild(rectangle);
 
     const mainTextOptions = {
         font: 'Roboto',
@@ -521,17 +517,76 @@ let Application = PIXI.Application,
     }
   }
 
+  function pause() {
+    gamePaused = true;
+    app.ticker.stop();
+    app.ticker.remove(gameLoop);
+    app.ticker.add(animateText);
+
+    let rectangle = new Graphics();
+    rectangle.beginFill(0x061639, 0.8);
+    rectangle.drawRect(0, 0, app.view.width, app.view.height);
+    rectangle.endFill();
+
+    app.stage.addChild(rectangle);
+
+    const mainTextOptions = {
+        font: 'Roboto',
+        fontSize: 48,
+        fontWeight: 'bolder',
+        fill: '#1affc6',
+        dropShadow: true,
+        dropShadowAlpha: 0.5,
+        dropShadowAngle: Math.PI/2,
+        align: 'center',
+    }
+    const instructuionOptions = {
+        font: 'Roboto',
+        fontSize: 20,
+        fontWeight: 'bold',
+        fill: '#FFF',
+        lineJoin: 'round'
+    }
+
+    const pausedText = new Text('Game \n Paused!', mainTextOptions);
+    instructionText = new Text('Press ENTER to resume', instructuionOptions);
+
+    pausedText.anchor.set(0.5, 0.5);
+    pausedText.x = app.view.width / 2;
+    pausedText.y = app.view.height / 2 - 50;
+
+    instructionText.anchor.set(0.5, 0.5);
+    instructionText.x = app.view.width / 2;
+    instructionText.y = app.view.height - 80;
+
+    app.stage.addChild(pausedText);
+    app.stage.addChild(instructionText);
+    app.ticker.start();
+
+  }
+
+  function resume() {
+    gamePaused = false;
+
+    childsToremove = 3;
+    while (childsToremove > 0) {
+      app.stage.removeChildAt(app.stage.children.length - 1);
+      childsToremove--;
+    }
+    app.ticker.remove(animateText);
+    app.ticker.add(gameLoop);
+    app.ticker.start();
+  }
+
   function handleKeyDown(event) {
     keysDown[event.keyCode] = true;
 
-    // TODO: add pause splash. Stop / star current listener, reuse animation text
-    // Not pausing on level up splash
     if (event.keyCode === 13) {
       console.log(app.ticker);
-      if (app.ticker.started) {
-        app.ticker.stop();
+      if (!gamePaused) {
+        pause();
       } else {
-        app.ticker.start();
+        resume();
       }
     }
 
@@ -812,9 +867,6 @@ let Application = PIXI.Application,
         increase = true;
       }
     }
-    // if (gameOver) {
-    //   requestAnimationFrame(animateText);
-    // }
   }
 
   function restartGame(event) {
