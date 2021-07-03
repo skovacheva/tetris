@@ -325,15 +325,19 @@ let Application = PIXI.Application,
       fallCounter = 0;
       if (bottomCollision()) {
 
-        if (keysDown[37]) {
-          moveLeft();
-          removeEventListeners();
+        if (keysDown[37] && !leftCollision()) {
+          piece.position.x -= SQUARE_SIZE;
           keysDown = {};
+          if (!bottomCollision()) {
+            return;
+          }
         }
-        if (keysDown[39]) {
-          moveRight();
-          removeEventListeners();
+        if (keysDown[39] && !rightCollision()) {
+          piece.position.x += SQUARE_SIZE;
           keysDown = {};
+          if (!bottomCollision()) {
+            return;
+          }
         }
 
         copyOnGrid();
@@ -342,7 +346,6 @@ let Application = PIXI.Application,
         numberOfPieces++;
         piece = newPiece();
         moveDown();
-        addEventListeners();
       }
     }
     draw();
@@ -381,7 +384,6 @@ let Application = PIXI.Application,
 
     removeLine(linesToRemove);
 
-    // TODO: Defene lines per level
     switch (true) {
       case numberOfLines >= 20 && numberOfLines < 40 && level != 2:
         level = 2;
@@ -616,6 +618,10 @@ let Application = PIXI.Application,
   }
 
   function rotate() {
+    if (bottomCollision()) {
+      return;
+    }
+    
     let stuck = false;
     let moved = false;
 
